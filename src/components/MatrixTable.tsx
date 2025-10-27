@@ -24,17 +24,22 @@ export default function MatrixTable({ allEntries, pathAttachments }: MatrixTable
   const pathRowsMap = new Map<string, PathRow>();
 
   allEntries.forEach(entry => {
-    // Get IP from endpoint data, fallback to EPG name if not available
-    let ip = entry.endpointData.ip;
-
-    if (!ip) {
-      const ipMatch = entry.epgName.match(/(\d+\.\d+\.\d+\.\d+)/);
-      if (ipMatch) {
-        ip = ipMatch[1];
-      }
-    }
-
     entry.results.forEach(result => {
+      // Get specific IP for this path from pathsWithIPs mapping
+      let ip = entry.endpointData.ip; // default fallback
+
+      if (entry.endpointData.pathsWithIPs && entry.endpointData.pathsWithIPs.has(result.path)) {
+        ip = entry.endpointData.pathsWithIPs.get(result.path)!;
+      }
+
+      // If still no IP, try to extract from EPG name
+      if (!ip) {
+        const ipMatch = entry.epgName.match(/(\d+\.\d+\.\d+\.\d+)/);
+        if (ipMatch) {
+          ip = ipMatch[1];
+        }
+      }
+
       // Use combination of IP and path as unique key
       const pathKey = `${ip}|${result.path}`;
 
