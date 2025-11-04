@@ -286,3 +286,58 @@ export function extractVlanFromEpg(epgName: string): string {
   const vlanMatch = epgName.match(/VLAN(\d+)/i);
   return vlanMatch ? vlanMatch[1] : '';
 }
+
+export interface AutoModeEndpoint {
+  ip: string;
+  mac: string;
+  path: string;
+  vlan: string;
+  encap: string;
+  epg: string;
+}
+
+export function parseApicEndpointsAuto(input: string): AutoModeEndpoint[] {
+  const lines = input.trim().split('\n');
+  const endpoints: AutoModeEndpoint[] = [];
+
+  let currentVlan = '';
+  let currentEpg = '';
+
+  for (const line of lines) {
+    // Extract VLAN from line
+    const vlanMatch = line.match(/vlan-(\d+)/i);
+    if (vlanMatch) {
+      currentVlan = vlanMatch[1];
+    }
+
+    // Extract EPG from AEPg line
+    const aepgMatch = line.match(/AEPg\s*:\s*([^\n]+)/i);
+    if (aepgMatch) {
+      currentEpg = aepgMatch[1].trim();
+    }
+
+    // Extract endpoint data from table rows
+    // Format: MAC IP Source Node Interface Encap
+    const endpointMatch = line.match(/([0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2})\s+(\d+\.\d+\.\d+\.\d+)\s+\w+\s+[\d\s]+\s+([\d-]+-[\d-]+-VPC-[\d-]+-[\d-]+-PG|eth\d+\/\d+)\s+(vlan-\d+)/);
+
+    if (endpointMatch) {
+      const mac = endpointMatch[1];
+      const ip = endpointMatch[2];
+      const path = endpointMatch[3];
+      const encap = endpointMatch[4];
+
+      if (ip && path && currentVlan) {
+        endpoints.push({
+          ip,
+          mac,
+          path,
+          vlan: currentVlan,
+          encap,
+          epg: currentEpg
+        });
+      }
+    }
+  }
+
+  return endpoints;
+}
