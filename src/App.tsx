@@ -10,6 +10,7 @@ import {
   generateCSV,
   extractVlanFromEpg,
   parseApicEndpointsAuto,
+  extractEpgNamesFromMoquery,
   type ValidationResult,
   type EndpointData,
   type PathAttachment,
@@ -120,6 +121,9 @@ function App() {
       return;
     }
 
+    // Extract EPG names from moquery data
+    const epgsByVlan = extractEpgNamesFromMoquery(moqueryInput);
+
     setPathAttachments(parsedMoquery);
     setAutoEndpoints(parsedEndpoints);
 
@@ -147,7 +151,8 @@ function App() {
       };
 
       const results = validateVlanAllowances(endpointData, parsedMoquery);
-      const epgName = endpoints[0]?.epg || `VLAN${vlan}`;
+      // Use EPG from moquery, or fallback to endpoint EPG, or generate default
+      const epgName = epgsByVlan.get(vlan) || endpoints[0]?.epg || `VLAN${vlan}`;
 
       return {
         id: Date.now().toString() + idx,

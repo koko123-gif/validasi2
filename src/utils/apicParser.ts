@@ -162,6 +162,34 @@ export function parseMoqueryOutput(input: string): PathAttachment[] {
   return attachments;
 }
 
+export function extractEpgNamesFromMoquery(input: string): Map<string, string> {
+  const lines = input.trim().split('\n');
+  const epgsByVlan = new Map<string, string>();
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+
+    // Match EPG name from DN
+    const epgMatch = line.match(/epg-([^\/]+)\//);
+    if (epgMatch) {
+      const epg = epgMatch[1];
+
+      // Extract VLAN from EPG name
+      const vlanMatch = epg.match(/VLAN(\d+)/i);
+      if (vlanMatch) {
+        const vlan = vlanMatch[1];
+
+        // Store EPG for this VLAN (only first occurrence)
+        if (!epgsByVlan.has(vlan)) {
+          epgsByVlan.set(vlan, epg);
+        }
+      }
+    }
+  }
+
+  return epgsByVlan;
+}
+
 export function validateVlanAllowances(
   endpointData: EndpointData,
   pathAttachments: PathAttachment[]
