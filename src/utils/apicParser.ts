@@ -162,34 +162,6 @@ export function parseMoqueryOutput(input: string): PathAttachment[] {
   return attachments;
 }
 
-export function extractEpgNamesFromMoquery(input: string): Map<string, string> {
-  const lines = input.trim().split('\n');
-  const epgsByVlan = new Map<string, string>();
-
-  for (const line of lines) {
-    if (!line.trim()) continue;
-
-    // Match EPG name from DN
-    const epgMatch = line.match(/epg-([^\/]+)\//);
-    if (epgMatch) {
-      const epg = epgMatch[1];
-
-      // Extract VLAN from EPG name
-      const vlanMatch = epg.match(/VLAN(\d+)/i);
-      if (vlanMatch) {
-        const vlan = vlanMatch[1];
-
-        // Store EPG for this VLAN (only first occurrence)
-        if (!epgsByVlan.has(vlan)) {
-          epgsByVlan.set(vlan, epg);
-        }
-      }
-    }
-  }
-
-  return epgsByVlan;
-}
-
 export function validateVlanAllowances(
   endpointData: EndpointData,
   pathAttachments: PathAttachment[]
@@ -313,59 +285,4 @@ export function extractPathName(path: string): string {
 export function extractVlanFromEpg(epgName: string): string {
   const vlanMatch = epgName.match(/VLAN(\d+)/i);
   return vlanMatch ? vlanMatch[1] : '';
-}
-
-export interface AutoModeEndpoint {
-  ip: string;
-  mac: string;
-  path: string;
-  vlan: string;
-  encap: string;
-  epg: string;
-}
-
-export function parseApicEndpointsAuto(input: string): AutoModeEndpoint[] {
-  const lines = input.trim().split('\n');
-  const endpoints: AutoModeEndpoint[] = [];
-
-  let currentVlan = '';
-  let currentEpg = '';
-
-  for (const line of lines) {
-    // Extract VLAN from line
-    const vlanMatch = line.match(/vlan-(\d+)/i);
-    if (vlanMatch) {
-      currentVlan = vlanMatch[1];
-    }
-
-    // Extract EPG from AEPg line
-    const aepgMatch = line.match(/AEPg\s*:\s*([^\n]+)/i);
-    if (aepgMatch) {
-      currentEpg = aepgMatch[1].trim();
-    }
-
-    // Extract endpoint data from table rows
-    // Format: MAC IP Source Node Interface Encap
-    const endpointMatch = line.match(/([0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2})\s+(\d+\.\d+\.\d+\.\d+)\s+\w+\s+[\d\s]+\s+([\d-]+-[\d-]+-VPC-[\d-]+-[\d-]+-PG|eth\d+\/\d+)\s+(vlan-\d+)/);
-
-    if (endpointMatch) {
-      const mac = endpointMatch[1];
-      const ip = endpointMatch[2];
-      const path = endpointMatch[3];
-      const encap = endpointMatch[4];
-
-      if (ip && path && currentVlan) {
-        endpoints.push({
-          ip,
-          mac,
-          path,
-          vlan: currentVlan,
-          encap,
-          epg: currentEpg
-        });
-      }
-    }
-  }
-
-  return endpoints;
 }

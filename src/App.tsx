@@ -2,19 +2,15 @@ import { useState } from 'react';
 import { Network, Download, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import ValidationTable from './components/ValidationTable';
 import MatrixTable from './components/MatrixTable';
-import EntryModeSelector from './components/EntryModeSelector';
 import {
   parseEndpointOutput,
   parseMoqueryOutput,
   validateVlanAllowances,
   generateCSV,
   extractVlanFromEpg,
-  parseApicEndpointsAuto,
-  extractEpgNamesFromMoquery,
   type ValidationResult,
   type EndpointData,
-  type PathAttachment,
-  type AutoModeEndpoint
+  type PathAttachment
 } from './utils/apicParser';
 import { downloadCSV } from './utils/csvExport';
 
@@ -27,14 +23,11 @@ interface ValidationEntry {
 }
 
 function App() {
-  const [entryMode, setEntryMode] = useState<'manual' | 'auto'>('manual');
   const [moqueryInput, setMoqueryInput] = useState('');
-  const [apicRawInput, setApicRawInput] = useState('');
   const [entries, setEntries] = useState<ValidationEntry[]>([
     { id: '1', endpointInput: '', epgName: '', results: null, endpointData: null }
   ]);
   const [pathAttachments, setPathAttachments] = useState<PathAttachment[]>([]);
-  const [autoEndpoints, setAutoEndpoints] = useState<AutoModeEndpoint[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const addEntry = () => {
@@ -57,14 +50,6 @@ function App() {
   const handleValidate = () => {
     setError(null);
 
-    if (entryMode === 'manual') {
-      handleValidateManual();
-    } else {
-      handleValidateAuto();
-    }
-  };
-
-  const handleValidateManual = () => {
     const parsedMoquery = parseMoqueryOutput(moqueryInput);
     if (parsedMoquery.length === 0) {
       setError('Unable to parse moquery data. Please check your input.');
@@ -87,11 +72,13 @@ function App() {
         return entry;
       }
 
+      // Extract VLAN from user-provided EPG name
       const vlanFromEpg = extractVlanFromEpg(entry.epgName);
       if (!vlanFromEpg) {
         return entry;
       }
 
+      // Override endpoint VLAN with the one from EPG name
       const endpointWithCorrectVlan = {
         ...parsedEndpoint,
         vlan: vlanFromEpg
@@ -106,64 +93,6 @@ function App() {
     });
 
     setEntries(updatedEntries);
-  };
-
-  const handleValidateAuto = () => {
-    const parsedMoquery = parseMoqueryOutput(moqueryInput);
-    if (parsedMoquery.length === 0) {
-      setError('Unable to parse moquery data. Please check your input.');
-      return;
-    }
-
-    const parsedEndpoints = parseApicEndpointsAuto(apicRawInput);
-    if (parsedEndpoints.length === 0) {
-      setError('Unable to parse APIC endpoint data. Please check your input.');
-      return;
-    }
-
-    // Extract EPG names from moquery data
-    const epgsByVlan = extractEpgNamesFromMoquery(moqueryInput);
-
-    setPathAttachments(parsedMoquery);
-    setAutoEndpoints(parsedEndpoints);
-
-    const groupedByVlan = new Map<string, AutoModeEndpoint[]>();
-    parsedEndpoints.forEach(ep => {
-      if (!groupedByVlan.has(ep.vlan)) {
-        groupedByVlan.set(ep.vlan, []);
-      }
-      groupedByVlan.get(ep.vlan)!.push(ep);
-    });
-
-    const newEntries: ValidationEntry[] = Array.from(groupedByVlan.entries()).map(([vlan, endpoints], idx) => {
-      const allPaths = Array.from(new Set(endpoints.map(ep => ep.path)));
-      const pathIPMap = new Map<string, string>();
-      endpoints.forEach(ep => {
-        pathIPMap.set(ep.path, ep.ip);
-      });
-
-      const endpointData: EndpointData = {
-        vlan,
-        ip: endpoints[0]?.ip || '',
-        paths: allPaths,
-        pod: '',
-        pathsWithIPs: pathIPMap
-      };
-
-      const results = validateVlanAllowances(endpointData, parsedMoquery);
-      // Use EPG from moquery, or fallback to endpoint EPG, or generate default
-      const epgName = epgsByVlan.get(vlan) || endpoints[0]?.epg || `VLAN${vlan}`;
-
-      return {
-        id: Date.now().toString() + idx,
-        endpointInput: '',
-        epgName,
-        results,
-        endpointData
-      };
-    });
-
-    setEntries(newEntries);
   };
 
   const handleExportAllCSV = () => {
@@ -283,15 +212,8 @@ function App() {
 
           <div className="p-8 space-y-6">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-3">
-                Entry Mode
-              </label>
-              <EntryModeSelector mode={entryMode} onChange={setEntryMode} />
-            </div>
-
-            <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                Moquery Data (Required)
+                Moquery Data (Shared)
                 <span className="text-slate-500 font-normal ml-2">
                   (moquery -c fvRsPathAtt ...)
                 </span>
@@ -300,96 +222,74 @@ function App() {
                 value={moqueryInput}
                 onChange={(e) => setMoqueryInput(e.target.value)}
                 placeholder='Paste output from: moquery -c fvRsPathAtt -f &#39;fv.RsPathAtt.encap=="vlan-XXX"&#39; | grep dn'
-                className="w-full h-40 px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent resize-none font-mono text-sm"
+                className="w-full h-48 px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent resize-none font-mono text-sm"
               />
             </div>
 
-            {entryMode === 'manual' ? (
-              <div className="border-t border-slate-200 pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    Endpoint Validations
-                  </h3>
-                  <button
-                    onClick={addEntry}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Entry
-                  </button>
-                </div>
+            <div className="border-t border-slate-200 pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900">
+                  Endpoint Validations
+                </h3>
+                <button
+                  onClick={addEntry}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Entry
+                </button>
+              </div>
 
-                <div className="space-y-4">
-                  {entries.map((entry, index) => (
-                    <div
-                      key={entry.id}
-                      className="border border-slate-200 rounded-lg p-4 bg-slate-50"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm font-medium text-slate-700">
-                          Entry #{index + 1}
-                        </span>
-                        {entries.length > 1 && (
-                          <button
-                            onClick={() => removeEntry(entry.id)}
-                            className="text-red-600 hover:text-red-700 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+              <div className="space-y-4">
+                {entries.map((entry, index) => (
+                  <div
+                    key={entry.id}
+                    className="border border-slate-200 rounded-lg p-4 bg-slate-50"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-medium text-slate-700">
+                        Entry #{index + 1}
+                      </span>
+                      {entries.length > 1 && (
+                        <button
+                          onClick={() => removeEntry(entry.id)}
+                          className="text-red-600 hover:text-red-700 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Endpoint Data
+                        </label>
+                        <textarea
+                          value={entry.endpointInput}
+                          onChange={(e) => updateEntry(entry.id, 'endpointInput', e.target.value)}
+                          placeholder="Paste output from: show endpoints ip x.x.x.x"
+                          className="w-full h-32 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent resize-none font-mono text-xs"
+                        />
                       </div>
 
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-2">
-                            Endpoint Data
-                          </label>
-                          <textarea
-                            value={entry.endpointInput}
-                            onChange={(e) => updateEntry(entry.id, 'endpointInput', e.target.value)}
-                            placeholder="Paste output from: show endpoints ip x.x.x.x"
-                            className="w-full h-32 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent resize-none font-mono text-xs"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-2">
-                            EPG Name
-                          </label>
-                          <input
-                            type="text"
-                            value={entry.epgName}
-                            onChange={(e) => updateEntry(entry.id, 'epgName', e.target.value)}
-                            placeholder="e.g., EPG-VLAN623-10.204.85.128-27"
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent text-sm"
-                          />
-                        </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          EPG Name
+                        </label>
+                        <input
+                          type="text"
+                          value={entry.epgName}
+                          onChange={(e) => updateEntry(entry.id, 'epgName', e.target.value)}
+                          placeholder="e.g., EPG-VLAN623-10.204.85.128-27"
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent text-sm"
+                        />
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <div className="border-t border-slate-200 pt-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">
-                  APIC Endpoint Data
-                </h3>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    APIC CLI Output (show endpoints ip...)
-                  </label>
-                  <textarea
-                    value={apicRawInput}
-                    onChange={(e) => setApicRawInput(e.target.value)}
-                    placeholder="Paste output from multiple: show endpoints ip 10.254.244.x commands"
-                    className="w-full h-64 px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent resize-none font-mono text-sm"
-                  />
-                  <p className="text-xs text-slate-500 mt-2">
-                    Paste the complete output from all "show endpoints ip" commands for automatic parsing
-                  </p>
-                </div>
-              </div>
-            )}
+            </div>
 
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
